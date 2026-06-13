@@ -21,7 +21,83 @@ function formatHMS(totalSeconds) {
 }
 
 function updateStopwatchDisplay() {
-  document.getElementById("stopwatchDisplay").textContent = formatHMS(stopwatchSeconds);
+  const text = formatHMS(stopwatchSeconds);
+  document.getElementById("stopwatchDisplay").textContent = text;
+  if (pipWindow && !pipWindow.closed) {
+    const pipDisplay = pipWindow.document.getElementById("pipTime");
+    if (pipDisplay) pipDisplay.textContent = text;
+  }
+}
+
+/* ---------- PICTURE-IN-PICTURE ---------- */
+
+let pipWindow = null;
+
+async function openPipTimer() {
+  if (!("documentPictureInPicture" in window)) {
+    document.getElementById("pipUnsupported").classList.remove("hidden");
+    return;
+  }
+
+  if (pipWindow && !pipWindow.closed) {
+    pipWindow.focus();
+    return;
+  }
+
+  pipWindow = await window.documentPictureInPicture.requestWindow({
+    width: 260,
+    height: 140
+  });
+
+  // basic styling inside the PiP window
+  const style = pipWindow.document.createElement("style");
+  style.textContent = `
+    body {
+      margin: 0;
+      background: #14161a;
+      color: #e8e9eb;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    .pip-time {
+      font-size: 56px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 1px;
+    }
+    .pip-label {
+      font-size: 12px;
+      color: #8b919c;
+      letter-spacing: 1px;
+      margin-top: 4px;
+    }
+  `;
+  pipWindow.document.head.appendChild(style);
+
+  const wrap = pipWindow.document.createElement("div");
+  wrap.style.textAlign = "center";
+
+  const timeEl = pipWindow.document.createElement("div");
+  timeEl.id = "pipTime";
+  timeEl.className = "pip-time";
+  timeEl.textContent = formatHMS(stopwatchSeconds);
+
+  const labelEl = pipWindow.document.createElement("div");
+  labelEl.className = "pip-label";
+  const subject = document.getElementById("subjectSelect").value;
+  labelEl.textContent = SUBJECT_LABELS[subject].toUpperCase();
+
+  wrap.appendChild(timeEl);
+  wrap.appendChild(labelEl);
+  pipWindow.document.body.appendChild(wrap);
+
+  pipWindow.addEventListener("pagehide", () => {
+    pipWindow = null;
+  });
 }
 
 function startStopwatch() {
@@ -221,6 +297,19 @@ function initTimerHandlers() {
   });
 
   document.getElementById("breakBtn").addEventListener("click", startBreak);
+
+  document.getElementById("pipBtn").addEventListener("click", openPipTimer);
+
+  document.getElementById("subjectSelect").addEventListener("change", (e) => {
+    if (pipWindow && !pipWindow.closed) {
+      const labelEl = pipWindow.document.querySelector(".pip-label");
+      if (labelEl) labelEl.textContent = SUBJECT_LABELS[e.target.value].toUpperCase();
+    }
+  });
+
+  if (!("documentPictureInPicture" in window)) {
+    document.getElementById("pipUnsupported").classList.remove("hidden");
+  }
 
   updateStopwatchDisplay();
 }
