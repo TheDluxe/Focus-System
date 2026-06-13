@@ -106,6 +106,7 @@ function startStopwatch() {
   stopwatchInterval = setInterval(() => {
     stopwatchSeconds++;
     updateStopwatchDisplay();
+    checkLongSessionNudge();
   }, 1000);
 
   document.getElementById("startBtn").disabled = true;
@@ -137,27 +138,41 @@ function resetStopwatch() {
   document.getElementById("pauseBtn").textContent = "Pause";
   document.getElementById("endBtn").disabled = true;
   document.getElementById("subjectSelect").disabled = false;
+  document.getElementById("longSessionNudge").classList.add("hidden");
+}
+
+function checkLongSessionNudge() {
+  const el = document.getElementById("longSessionNudge");
+  if (stopwatchSeconds >= 120 * 60) {
+    el.classList.remove("hidden");
+  }
 }
 
 /* ---------- BREAK TIMER ---------- */
 
-function startBreak() {
+function startBreak(targetDisplayEl, onComplete) {
   if (breakInterval) return;
   breakSecondsLeft = 5 * 60;
-  updateBreakDisplay();
-  const btn = document.getElementById("breakBtn");
-  btn.textContent = "Break running...";
-  btn.disabled = true;
+  const displayEl = targetDisplayEl || document.getElementById("breakDisplay");
+  updateBreakDisplay(displayEl);
+
+  const mainBtn = document.getElementById("breakBtn");
+  if (mainBtn) {
+    mainBtn.textContent = "Break running...";
+    mainBtn.disabled = true;
+  }
 
   breakInterval = setInterval(() => {
     breakSecondsLeft--;
-    updateBreakDisplay();
+    updateBreakDisplay(displayEl);
     if (breakSecondsLeft <= 0) {
       clearInterval(breakInterval);
       breakInterval = null;
-      document.getElementById("breakDisplay").textContent = "Break over. Back to the floor.";
-      btn.textContent = "Start 5-min Break";
-      btn.disabled = false;
+      displayEl.textContent = "Break over. Back to the floor.";
+      if (mainBtn) {
+        mainBtn.textContent = "Start 5-min Break";
+        mainBtn.disabled = false;
+      }
       // gentle audio cue
       try {
         initAudio();
@@ -170,14 +185,16 @@ function startBreak() {
         osc.start();
         osc.stop(audioCtx.currentTime + 0.4);
       } catch (e) {}
+      if (onComplete) onComplete();
     }
   }, 1000);
 }
 
-function updateBreakDisplay() {
+function updateBreakDisplay(displayEl) {
   const m = Math.floor(breakSecondsLeft / 60);
   const s = breakSecondsLeft % 60;
-  document.getElementById("breakDisplay").textContent =
+  const el = displayEl || document.getElementById("breakDisplay");
+  el.textContent =
     `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")} remaining — eyes closed, no phone`;
 }
 
@@ -215,12 +232,57 @@ function openEndSessionModal() {
   });
 
   document.getElementById("sessionNotes").value = "";
+
+  // un-hide save options (in case previous session left them hidden)
+  document.getElementById("quickLogBtn").classList.remove("hidden");
+  document.querySelector(".divider").classList.remove("hidden");
+  document.getElementById("saveSessionBtn").classList.remove("hidden");
+  document.querySelectorAll("#endSessionModal .form-row, #endSessionModal .extras-grid").forEach(el => el.classList.remove("hidden"));
+
+  // reset break suggestion area
+  document.getElementById("breakSuggestion").classList.add("hidden");
+  const breakStatusDisplay = document.getElementById("modalBreakDisplay");
+  if (breakStatusDisplay) breakStatusDisplay.textContent = "";
+
   document.getElementById("endSessionModal").classList.remove("hidden");
 }
 
-function closeEndSessionModalAndReset() {
-  document.getElementById("endSessionModal").classList.add("hidden");
-  resetStopwatch();
+function buildSessionRecord(subject, minutes, repPass, extras, notes) {
+  return {
+    id: Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+    date: todayStr(),
+    subject: subject,
+    minutes: minutes,
+    repPass: repPass,
+    extras: extras,
+    notes: notes
+  };
+}
+
+function finishSessionSave(session) {
+  addSession(session);
+  renderDashboard();
+  checkExportReminder();
+
+  // hide the save options, show break suggestion
+  document.getElementById("quickLogBtn").classList.add("hidden");
+  document.querySelector(".divider").classList.add("hidden");
+  document.getElementById("saveSessionBtn").classList.add("hidden");
+  document.querySelectorAll("#endSessionModal .form-row, #endSessionModal .extras-grid").forEach(el => el.classList.add("hidden"));
+  document.getElementById("sessionSummary").textContent += " — saved.";
+
+  showBreakSuggestion();
+}
+
+function showBreakSuggestion() {
+  document.getElementById("breakSuggestion").classList.remove("hidden");
+}
+
+function quickLogSession() {
+  const subject = document.getElementById("subjectSelect").value;
+  const minutes = Math.round(stopwatchSeconds / 60);
+  const session = buildSessionRecord(subject, minutes, "na", {}, "");
+  finishSessionSave(session);
 }
 
 function saveCurrentSession() {
@@ -233,21 +295,22 @@ function saveCurrentSession() {
     extras[key] = parseInt(input.value, 10) || 0;
   });
 
-  const session = {
-    id: Date.now() + "-" + Math.random().toString(36).slice(2, 7),
-    date: todayStr(),
-    subject: subject,
-    minutes: minutes,
-    repPass: pendingRepPass,
-    extras: extras,
-    notes: document.getElementById("sessionNotes").value.trim()
-  };
+  const session = buildSessionRecord(
+    subject,
+    minutes,
+    pendingRepPass,
+    extras,
+    document.getElementById("sessionNotes").value.trim()
+  );
 
-  addSession(session);
-  closeEndSessionModalAndReset();
-  renderDashboard();
-  checkExportReminder();
+  finishSessionSave(session);
 }
+
+function closeEndSessionModal() {
+  document.getElementById("endSessionModal").classList.add("hidden");
+  resetStopwatch();
+}
+
 
 function initTimerHandlers() {
   document.getElementById("startBtn").addEventListener("click", () => {
@@ -268,6 +331,20 @@ function initTimerHandlers() {
   });
 
   document.getElementById("saveSessionBtn").addEventListener("click", saveCurrentSession);
+
+  document.getElementById("quickLogBtn").addEventListener("click", quickLogSession);
+
+  document.getElementById("takeBreakBtn").addEventListener("click", () => {
+    document.getElementById("takeBreakBtn").disabled = true;
+    document.getElementById("skipBreakBtn").disabled = true;
+    startBreak(document.getElementById("modalBreakDisplay"), () => {
+      closeEndSessionModal();
+    });
+  });
+
+  document.getElementById("skipBreakBtn").addEventListener("click", () => {
+    closeEndSessionModal();
+  });
 
   document.querySelectorAll(".toggle-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -296,7 +373,7 @@ function initTimerHandlers() {
     setNoiseVolume(parseInt(e.target.value, 10));
   });
 
-  document.getElementById("breakBtn").addEventListener("click", startBreak);
+  document.getElementById("breakBtn").addEventListener("click", () => startBreak());
 
   document.getElementById("pipBtn").addEventListener("click", openPipTimer);
 
