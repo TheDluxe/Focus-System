@@ -12,7 +12,10 @@
 
   <!-- NAV -->
   <nav id="nav">
-    <div class="nav-title">FOCUS SYSTEM</div>
+    <div class="nav-title-row">
+      <div class="nav-title">FOCUS SYSTEM</div>
+      <div class="nav-streak" id="navStreak"></div>
+    </div>
     <div class="nav-tabs">
       <button class="tab-btn active" data-tab="timer">Session</button>
       <button class="tab-btn" data-tab="dashboard">Dashboard</button>
@@ -39,6 +42,10 @@
           <option value="spanish">Spanish</option>
           <option value="music">Music Production</option>
         </select>
+      </div>
+
+      <div id="longSessionNudge" class="nudge hidden">
+        Past 120 min — even hyperfocus degrades here. Consider wrapping up.
       </div>
 
       <div class="stopwatch-display" id="stopwatchDisplay">00:00:00</div>
@@ -70,6 +77,9 @@
         <h3>Session Complete</h3>
         <p id="sessionSummary"></p>
 
+        <button id="quickLogBtn" class="btn btn-primary btn-block">Just log the time</button>
+        <div class="divider"><span>or add details</span></div>
+
         <div class="form-row">
           <label>Did the rep / task pass?</label>
           <div class="toggle-row">
@@ -88,7 +98,16 @@
           <input type="text" id="sessionNotes" placeholder="anything worth remembering">
         </div>
 
-        <button id="saveSessionBtn" class="btn btn-primary">Save Session</button>
+        <button id="saveSessionBtn" class="btn btn-secondary btn-block">Save with details</button>
+
+        <div id="breakSuggestion" class="break-suggestion hidden">
+          <p>Take your 5-min break? Eyes closed, no phone.</p>
+          <div class="toggle-row">
+            <button id="takeBreakBtn" class="btn btn-secondary btn-sm">Start break</button>
+            <button id="skipBreakBtn" class="btn btn-secondary btn-sm">Skip</button>
+          </div>
+          <div id="modalBreakDisplay" class="break-display"></div>
+        </div>
       </div>
     </div>
 
