@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Focus System</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- NAV -->
+  <nav id="nav">
+    <div class="nav-title">FOCUS SYSTEM</div>
+    <div class="nav-tabs">
+      <button class="tab-btn active" data-tab="timer">Session</button>
+      <button class="tab-btn" data-tab="dashboard">Dashboard</button>
+      <button class="tab-btn" data-tab="night">Night Before</button>
+      <button class="tab-btn" data-tab="data">Data</button>
+    </div>
+  </nav>
+
+  <!-- ============ TIMER VIEW ============ -->
+  <section id="view-timer" class="view active">
+    <div class="timer-wrap">
+
+      <div class="sticky-note" id="stickyNoteDisplay">
+        <div class="sticky-label">TONIGHT'S NOTE</div>
+        <div class="sticky-task" id="stickyTaskText">No task set — go to Night Before tab</div>
+        <div class="sticky-fallback" id="stickyFallbackText"></div>
+      </div>
+
+      <div class="subject-select-row">
+        <label for="subjectSelect">Subject</label>
+        <select id="subjectSelect">
+          <option value="de">Data Engineering</option>
+          <option value="french">French</option>
+          <option value="spanish">Spanish</option>
+          <option value="music">Music Production</option>
+        </select>
+      </div>
+
+      <div class="stopwatch-display" id="stopwatchDisplay">00:00:00</div>
+
+      <div class="timer-controls">
+        <button id="startBtn" class="btn btn-primary">Start</button>
+        <button id="pauseBtn" class="btn btn-secondary" disabled>Pause</button>
+        <button id="endBtn" class="btn btn-end" disabled>End Session</button>
+      </div>
+
+      <div class="brown-noise-row">
+        <button id="brownNoiseBtn" class="btn btn-noise">🔊 Brown Noise: OFF</button>
+        <input type="range" id="noiseVolume" min="0" max="100" value="50">
+      </div>
+
+      <div class="break-row">
+        <button id="breakBtn" class="btn btn-break">Start 5-min Break</button>
+        <div id="breakDisplay" class="break-display"></div>
+      </div>
+
+    </div>
+
+    <!-- END SESSION MODAL -->
+    <div id="endSessionModal" class="modal hidden">
+      <div class="modal-card">
+        <h3>Session Complete</h3>
+        <p id="sessionSummary"></p>
+
+        <div class="form-row">
+          <label>Did the rep / task pass?</label>
+          <div class="toggle-row">
+            <button class="toggle-btn" data-val="yes">Yes</button>
+            <button class="toggle-btn" data-val="no">No</button>
+            <button class="toggle-btn" data-val="na">N/A</button>
+          </div>
+        </div>
+
+        <div class="extras-grid" id="extrasGrid">
+          <!-- populated dynamically based on subject -->
+        </div>
+
+        <div class="form-row">
+          <label for="sessionNotes">Notes (optional)</label>
+          <input type="text" id="sessionNotes" placeholder="anything worth remembering">
+        </div>
+
+        <button id="saveSessionBtn" class="btn btn-primary">Save Session</button>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ============ DASHBOARD VIEW ============ -->
+  <section id="view-dashboard" class="view">
+
+    <div class="dash-header">
+      <h2>Dashboard</h2>
+      <div class="streak-alert" id="streakAlert"></div>
+    </div>
+
+    <div class="subject-cards" id="subjectCards">
+      <!-- populated dynamically -->
+    </div>
+
+    <div class="dash-section">
+      <h3>Heatmaps</h3>
+      <div id="heatmaps"></div>
+    </div>
+
+    <div class="dash-section">
+      <h3>Daily Log</h3>
+      <div class="table-wrap">
+        <table id="dailyLogTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>DE min</th>
+              <th>French min</th>
+              <th>Spanish min</th>
+              <th>Music min</th>
+              <th>Day total</th>
+              <th>Extras</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="dash-section">
+      <h3>Weekly Checkpoint <span class="muted">(Sunday, 10 min)</span></h3>
+      <div id="weeklySnapshot"></div>
+    </div>
+
+  </section>
+
+  <!-- ============ NIGHT BEFORE VIEW ============ -->
+  <section id="view-night" class="view">
+    <div class="night-wrap">
+      <h2>Night Before Routine</h2>
+      <p class="muted">Done in this order. This is the first step of tomorrow's session.</p>
+
+      <div class="journal-block">
+        <label>1. What did I actually do today that moved something forward?</label>
+        <textarea id="journal1" rows="3"></textarea>
+      </div>
+
+      <div class="journal-block">
+        <label>2. What is the ONE thing tomorrow needs to have, to count?</label>
+        <textarea id="journalTask" rows="2"></textarea>
+        <label class="sub-label">Fallback if that's blocked:</label>
+        <textarea id="journalFallback" rows="2"></textarea>
+      </div>
+
+      <div class="journal-block">
+        <label>3. What am I carrying that I need to put down? <span class="muted">(equanimity check)</span></label>
+        <textarea id="journal3" rows="3"></textarea>
+      </div>
+
+      <div class="journal-block">
+        <label>Tomorrow's subject focus</label>
+        <select id="tomorrowSubject">
+          <option value="de">Data Engineering</option>
+          <option value="french">French</option>
+          <option value="spanish">Spanish</option>
+          <option value="music">Music Production</option>
+        </select>
+      </div>
+
+      <button id="saveNightBtn" class="btn btn-primary">Save & Set Tomorrow's Note</button>
+      <div id="nightSavedMsg" class="saved-msg hidden">Saved. Sticky note set for tomorrow. Phone away, laptop closed.</div>
+
+      <div class="dash-section">
+        <h3>Past Entries</h3>
+        <div id="pastJournal"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DATA VIEW ============ -->
+  <section id="view-data" class="view">
+    <div class="data-wrap">
+      <h2>Your Data</h2>
+      <p class="muted">Everything is stored locally in this browser. Nothing is sent anywhere. Export weekly so you can move it to another laptop or keep a backup.</p>
+
+      <div class="data-actions">
+        <button id="exportBtn" class="btn btn-primary">⬇ Export All Data (JSON)</button>
+        <label for="importFile" class="btn btn-secondary" style="display:inline-block;cursor:pointer;">⬆ Import Data File</label>
+        <input type="file" id="importFile" accept=".json" style="display:none;">
+      </div>
+
+      <div class="data-actions">
+        <button id="resetBtn" class="btn btn-danger">⚠ Reset All Data</button>
+      </div>
+
+      <div class="dash-section">
+        <h3>Export Reminder Settings</h3>
+        <label>
+          <input type="checkbox" id="reminderEnabled" checked>
+          Remind me to export weekly (every Sunday)
+        </label>
+        <div id="lastExportInfo" class="muted" style="margin-top:8px;"></div>
+      </div>
+
+      <div class="dash-section">
+        <h3>Raw Data Preview</h3>
+        <pre id="rawDataPreview"></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- EXPORT REMINDER BANNER -->
+  <div id="exportReminder" class="export-reminder hidden">
+    <span>📦 It's been a week — export your data to keep a backup on your laptop.</span>
+    <button id="exportNowBtn" class="btn btn-primary btn-sm">Export Now</button>
+    <button id="dismissReminderBtn" class="btn btn-secondary btn-sm">Remind me later</button>
+  </div>
+
+</div>
+
+<audio id="brownNoiseAudio" loop></audio>
+
+<script src="storage.js"></script>
+<script src="audio.js"></script>
+<script src="timer.js"></script>
+<script src="dashboard.js"></script>
+<script src="night.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
