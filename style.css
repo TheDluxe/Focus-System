@@ -139,6 +139,21 @@ body {
 .btn-danger { background: var(--red); color: #fff; }
 .btn-sm { padding: 8px 16px; font-size: 13px; }
 
+/* PiP window content (styled via injected stylesheet too, but kept here for reference) */
+.pip-stopwatch {
+  font-size: 56px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  padding: 20px;
+}
+.pip-label {
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
 .brown-noise-row, .break-row {
   display: flex;
   align-items: center;
