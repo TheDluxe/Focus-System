@@ -228,10 +228,21 @@ function renderWeeklySnapshot() {
 
 /* ---------- MASTER RENDER ---------- */
 
+function renderNavStreak() {
+  const el = document.getElementById("navStreak");
+  const streak = getCurrentStreak();
+  if (streak > 0) {
+    el.innerHTML = `<span class="fire">🔥</span> ${streak}d`;
+  } else {
+    el.textContent = "";
+  }
+}
+
 function renderDashboard() {
   renderSubjectCards();
   renderStreakAlert();
   renderHeatmaps();
   renderDailyLog();
   renderWeeklySnapshot();
+  renderNavStreak();
 }
