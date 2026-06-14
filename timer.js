@@ -1,392 +1,241 @@
-/* timer.js
-   Stopwatch (counts UP, not down - per ADHD doc).
-   Break timer (5 min countdown).
-   End-session modal: rep pass + subject-specific extras + notes.
-*/
+/* timer.js */
+let swSeconds=0, swRunning=false, swInterval=null;
+let breakInterval=null, breakSecondsLeft=0;
+let pendingRepPass="na";
+let pipWindow=null;
 
-let stopwatchInterval = null;
-let stopwatchSeconds = 0;
-let stopwatchRunning = false;
+function fmt(s){ return [Math.floor(s/3600),Math.floor((s%3600)/60),s%60].map(v=>String(v).padStart(2,"0")).join(":"); }
 
-let breakInterval = null;
-let breakSecondsLeft = 0;
-
-let pendingRepPass = "na";
-
-function formatHMS(totalSeconds) {
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  return [h, m, s].map(v => String(v).padStart(2, "0")).join(":");
-}
-
-function updateStopwatchDisplay() {
-  const text = formatHMS(stopwatchSeconds);
-  document.getElementById("stopwatchDisplay").textContent = text;
-  if (pipWindow && !pipWindow.closed) {
-    const pipDisplay = pipWindow.document.getElementById("pipTime");
-    if (pipDisplay) pipDisplay.textContent = text;
+function updateDisplay() {
+  const t=fmt(swSeconds);
+  document.getElementById("stopwatchDisplay").textContent=t;
+  document.getElementById("stopwatchLabel").textContent=swRunning?"RUNNING":swSeconds>0?"PAUSED":"READY";
+  updateRing();
+  if(pipWindow&&!pipWindow.closed){
+    const el=pipWindow.document.getElementById("pipTime");
+    if(el) el.textContent=t;
   }
 }
 
-/* ---------- PICTURE-IN-PICTURE ---------- */
-
-let pipWindow = null;
-
-async function openPipTimer() {
-  if (!("documentPictureInPicture" in window)) {
-    document.getElementById("pipUnsupported").classList.remove("hidden");
-    return;
-  }
-
-  if (pipWindow && !pipWindow.closed) {
-    pipWindow.focus();
-    return;
-  }
-
-  pipWindow = await window.documentPictureInPicture.requestWindow({
-    width: 260,
-    height: 140
-  });
-
-  // basic styling inside the PiP window
-  const style = pipWindow.document.createElement("style");
-  style.textContent = `
-    body {
-      margin: 0;
-      background: #14161a;
-      color: #e8e9eb;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-    }
-    .pip-time {
-      font-size: 56px;
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: 1px;
-    }
-    .pip-label {
-      font-size: 12px;
-      color: #8b919c;
-      letter-spacing: 1px;
-      margin-top: 4px;
-    }
-  `;
-  pipWindow.document.head.appendChild(style);
-
-  const wrap = pipWindow.document.createElement("div");
-  wrap.style.textAlign = "center";
-
-  const timeEl = pipWindow.document.createElement("div");
-  timeEl.id = "pipTime";
-  timeEl.className = "pip-time";
-  timeEl.textContent = formatHMS(stopwatchSeconds);
-
-  const labelEl = pipWindow.document.createElement("div");
-  labelEl.className = "pip-label";
-  const subject = document.getElementById("subjectSelect").value;
-  labelEl.textContent = SUBJECT_LABELS[subject].toUpperCase();
-
-  wrap.appendChild(timeEl);
-  wrap.appendChild(labelEl);
-  pipWindow.document.body.appendChild(wrap);
-
-  pipWindow.addEventListener("pagehide", () => {
-    pipWindow = null;
-  });
+function updateRing() {
+  const fill=document.getElementById("ringFill");
+  if(!fill) return;
+  // ring animates over a 90-min target session (the playbook ceiling start)
+  const target=90*60;
+  const pct=Math.min(swSeconds/target,1);
+  const circ=553;
+  fill.style.strokeDashoffset=circ-(pct*circ);
+  // color from current activity
+  const act=getActivity(document.getElementById("subjectSelect").value);
+  fill.style.stroke=act?act.color:"var(--accent)";
+  if(swRunning) fill.classList.add("running"); else fill.classList.remove("running");
 }
 
 function startStopwatch() {
-  if (stopwatchRunning) return;
-  stopwatchRunning = true;
-  stopwatchInterval = setInterval(() => {
-    stopwatchSeconds++;
-    updateStopwatchDisplay();
-    checkLongSessionNudge();
-  }, 1000);
-
-  document.getElementById("startBtn").disabled = true;
-  document.getElementById("pauseBtn").disabled = false;
-  document.getElementById("endBtn").disabled = false;
-  document.getElementById("subjectSelect").disabled = true;
+  if(swRunning) return;
+  swRunning=true;
+  swInterval=setInterval(()=>{ swSeconds++; updateDisplay(); checkNudge(); },1000);
+  document.getElementById("startBtn").disabled=true;
+  document.getElementById("pauseBtn").disabled=false;
+  document.getElementById("endBtn").disabled=false;
+  document.getElementById("subjectSelect").disabled=true;
+  document.getElementById("stopwatchLabel").textContent="RUNNING";
+  // start noise if active
+  if(document.getElementById("brownNoiseBtn").classList.contains("active")){
+    startBrownNoise(parseInt(document.getElementById("noiseVolume").value));
+  }
 }
 
 function pauseStopwatch() {
-  if (!stopwatchRunning) {
-    // resume
-    startStopwatch();
-    document.getElementById("pauseBtn").textContent = "Pause";
-    return;
-  }
-  stopwatchRunning = false;
-  clearInterval(stopwatchInterval);
-  document.getElementById("startBtn").disabled = false;
-  document.getElementById("pauseBtn").textContent = "Resume";
+  if(!swRunning){ startStopwatch(); document.getElementById("pauseBtn").textContent="Pause"; return; }
+  swRunning=false; clearInterval(swInterval);
+  document.getElementById("pauseBtn").textContent="Resume";
+  updateDisplay();
 }
 
 function resetStopwatch() {
-  stopwatchRunning = false;
-  clearInterval(stopwatchInterval);
-  stopwatchSeconds = 0;
-  updateStopwatchDisplay();
-  document.getElementById("startBtn").disabled = false;
-  document.getElementById("pauseBtn").disabled = true;
-  document.getElementById("pauseBtn").textContent = "Pause";
-  document.getElementById("endBtn").disabled = true;
-  document.getElementById("subjectSelect").disabled = false;
+  swRunning=false; clearInterval(swInterval); swSeconds=0;
+  document.getElementById("startBtn").disabled=false;
+  document.getElementById("pauseBtn").disabled=true;
+  document.getElementById("pauseBtn").textContent="Pause";
+  document.getElementById("endBtn").disabled=true;
+  document.getElementById("subjectSelect").disabled=false;
   document.getElementById("longSessionNudge").classList.add("hidden");
+  updateDisplay();
 }
 
-function checkLongSessionNudge() {
-  const el = document.getElementById("longSessionNudge");
-  if (stopwatchSeconds >= 120 * 60) {
-    el.classList.remove("hidden");
-  }
+function checkNudge() {
+  if(swSeconds>=120*60) document.getElementById("longSessionNudge").classList.remove("hidden");
 }
 
-/* ---------- BREAK TIMER ---------- */
+/* ── BREAK ── */
+function startBreak(displayEl, onDone) {
+  if(breakInterval) return;
+  breakSecondsLeft=5*60;
+  const el=displayEl||document.getElementById("breakDisplay");
+  renderBreak(el);
+  const mainBtn=document.getElementById("breakBtn");
+  if(mainBtn){ mainBtn.classList.add("active"); mainBtn.querySelector(".tool-label").textContent="Break..."; }
 
-function startBreak(targetDisplayEl, onComplete) {
-  if (breakInterval) return;
-  breakSecondsLeft = 5 * 60;
-  const displayEl = targetDisplayEl || document.getElementById("breakDisplay");
-  updateBreakDisplay(displayEl);
-
-  const mainBtn = document.getElementById("breakBtn");
-  if (mainBtn) {
-    mainBtn.textContent = "Break running...";
-    mainBtn.disabled = true;
-  }
-
-  breakInterval = setInterval(() => {
+  breakInterval=setInterval(()=>{
     breakSecondsLeft--;
-    updateBreakDisplay(displayEl);
-    if (breakSecondsLeft <= 0) {
-      clearInterval(breakInterval);
-      breakInterval = null;
-      displayEl.textContent = "Break over. Back to the floor.";
-      if (mainBtn) {
-        mainBtn.textContent = "Start 5-min Break";
-        mainBtn.disabled = false;
-      }
-      // gentle audio cue
-      try {
-        initAudio();
-        const osc = audioCtx.createOscillator();
-        const g = audioCtx.createGain();
-        osc.frequency.value = 440;
-        g.gain.value = 0.15;
-        osc.connect(g);
-        g.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.4);
-      } catch (e) {}
-      if (onComplete) onComplete();
+    renderBreak(el);
+    if(breakSecondsLeft<=0){
+      clearInterval(breakInterval); breakInterval=null;
+      el.textContent="Break over. Back to the floor.";
+      if(mainBtn){ mainBtn.classList.remove("active"); mainBtn.querySelector(".tool-label").textContent="5-min Break"; }
+      playTone(440,0.4,0.12);
+      if(onDone) onDone();
     }
-  }, 1000);
+  },1000);
 }
 
-function updateBreakDisplay(displayEl) {
-  const m = Math.floor(breakSecondsLeft / 60);
-  const s = breakSecondsLeft % 60;
-  const el = displayEl || document.getElementById("breakDisplay");
-  el.textContent =
-    `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")} remaining — eyes closed, no phone`;
+function renderBreak(el) {
+  const m=Math.floor(breakSecondsLeft/60), s=breakSecondsLeft%60;
+  (el||document.getElementById("breakDisplay")).textContent=
+    `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")} — eyes closed, no phone`;
 }
 
-/* ---------- END SESSION MODAL ---------- */
-
+/* ── END SESSION MODAL ── */
 function openEndSessionModal() {
-  // pause stopwatch while filling out modal
-  if (stopwatchRunning) {
-    stopwatchRunning = false;
-    clearInterval(stopwatchInterval);
-  }
+  if(swRunning){ swRunning=false; clearInterval(swInterval); }
+  stopBrownNoise();
+  document.getElementById("brownNoiseBtn").classList.remove("active");
+  document.getElementById("noiseStatus").textContent="OFF";
 
-  const subject = document.getElementById("subjectSelect").value;
-  const minutes = Math.round(stopwatchSeconds / 60);
+  const actId=document.getElementById("subjectSelect").value;
+  const act=getActivity(actId);
+  const mins=Math.round(swSeconds/60);
 
-  document.getElementById("sessionSummary").textContent =
-    `${SUBJECT_LABELS[subject]} — ${formatHMS(stopwatchSeconds)} (${minutes} min logged)`;
+  document.getElementById("sessionSummary").textContent=
+    `${act?act.name:"Session"} — ${fmt(swSeconds)} (${mins} min)`;
 
-  // reset rep toggle
-  pendingRepPass = "na";
-  document.querySelectorAll(".toggle-btn").forEach(b => b.classList.remove("selected"));
-  document.querySelector('.toggle-btn[data-val="na"]').classList.add("selected");
+  // reset toggles
+  pendingRepPass="na";
+  document.querySelectorAll(".toggle-btn").forEach(b=>b.classList.toggle("selected",b.dataset.val==="na"));
 
-  // build extras fields for this subject
-  const extrasGrid = document.getElementById("extrasGrid");
-  extrasGrid.innerHTML = "";
-  (SUBJECT_EXTRAS[subject] || []).forEach(extra => {
-    const div = document.createElement("div");
-    div.className = "extra-field";
-    div.innerHTML = `
-      <label>${extra.label}</label>
-      <input type="number" min="0" value="0" data-extra-key="${extra.key}">
-    `;
-    extrasGrid.appendChild(div);
+  // build extras
+  const grid=document.getElementById("extrasGrid");
+  grid.innerHTML="";
+  (act&&act.extras||[]).forEach(ex=>{
+    const div=document.createElement("div"); div.className="extra-field";
+    div.innerHTML=`<label class="field-label">${ex.label}</label><input type="number" min="0" value="0" data-key="${ex.key}">`;
+    grid.appendChild(div);
   });
 
-  document.getElementById("sessionNotes").value = "";
+  document.getElementById("sessionNotes").value="";
 
-  // un-hide save options (in case previous session left them hidden)
-  document.getElementById("quickLogBtn").classList.remove("hidden");
+  // un-hide all modal elements
+  ["quickLogBtn","saveSessionBtn"].forEach(id=>document.getElementById(id).classList.remove("hidden"));
   document.querySelector(".divider").classList.remove("hidden");
-  document.getElementById("saveSessionBtn").classList.remove("hidden");
-  document.querySelectorAll("#endSessionModal .form-row, #endSessionModal .extras-grid").forEach(el => el.classList.remove("hidden"));
-
-  // reset break suggestion area
+  document.querySelectorAll("#endSessionModal .form-row, #endSessionModal .extras-grid").forEach(el=>el.classList.remove("hidden"));
   document.getElementById("breakSuggestion").classList.add("hidden");
-  const breakStatusDisplay = document.getElementById("modalBreakDisplay");
-  if (breakStatusDisplay) breakStatusDisplay.textContent = "";
+  document.getElementById("modalBreakDisplay").textContent="";
 
   document.getElementById("endSessionModal").classList.remove("hidden");
 }
 
-function buildSessionRecord(subject, minutes, repPass, extras, notes) {
-  return {
-    id: Date.now() + "-" + Math.random().toString(36).slice(2, 7),
-    date: todayStr(),
-    subject: subject,
-    minutes: minutes,
-    repPass: repPass,
-    extras: extras,
-    notes: notes
-  };
+function buildRecord(actId,mins,rep,extras,notes) {
+  return { id:Date.now()+"-"+Math.random().toString(36).slice(2,7), date:todayStr(), subject:actId, minutes:mins, repPass:rep, extras, notes };
 }
 
-function finishSessionSave(session) {
+function afterSave(session) {
   addSession(session);
   renderDashboard();
   checkExportReminder();
-
-  // hide the save options, show break suggestion
-  document.getElementById("quickLogBtn").classList.add("hidden");
+  // hide save options, show break prompt
+  ["quickLogBtn","saveSessionBtn"].forEach(id=>document.getElementById(id).classList.add("hidden"));
   document.querySelector(".divider").classList.add("hidden");
-  document.getElementById("saveSessionBtn").classList.add("hidden");
-  document.querySelectorAll("#endSessionModal .form-row, #endSessionModal .extras-grid").forEach(el => el.classList.add("hidden"));
-  document.getElementById("sessionSummary").textContent += " — saved.";
-
-  showBreakSuggestion();
-}
-
-function showBreakSuggestion() {
+  document.querySelectorAll("#endSessionModal .form-row, #endSessionModal .extras-grid").forEach(el=>el.classList.add("hidden"));
+  document.getElementById("sessionSummary").textContent+=" — saved ✓";
   document.getElementById("breakSuggestion").classList.remove("hidden");
 }
 
-function quickLogSession() {
-  const subject = document.getElementById("subjectSelect").value;
-  const minutes = Math.round(stopwatchSeconds / 60);
-  const session = buildSessionRecord(subject, minutes, "na", {}, "");
-  finishSessionSave(session);
+function quickLog() {
+  const actId=document.getElementById("subjectSelect").value;
+  const mins=Math.round(swSeconds/60);
+  afterSave(buildRecord(actId,mins,"na",{},""));
 }
 
-function saveCurrentSession() {
-  const subject = document.getElementById("subjectSelect").value;
-  const minutes = Math.round(stopwatchSeconds / 60);
-
-  const extras = {};
-  document.querySelectorAll("#extrasGrid input[data-extra-key]").forEach(input => {
-    const key = input.getAttribute("data-extra-key");
-    extras[key] = parseInt(input.value, 10) || 0;
+function saveWithDetails() {
+  const actId=document.getElementById("subjectSelect").value;
+  const mins=Math.round(swSeconds/60);
+  const extras={};
+  document.querySelectorAll("#extrasGrid input[data-key]").forEach(inp=>{
+    extras[inp.dataset.key]=parseInt(inp.value)||0;
   });
-
-  const session = buildSessionRecord(
-    subject,
-    minutes,
-    pendingRepPass,
-    extras,
-    document.getElementById("sessionNotes").value.trim()
-  );
-
-  finishSessionSave(session);
+  afterSave(buildRecord(actId,mins,pendingRepPass,extras,document.getElementById("sessionNotes").value.trim()));
 }
 
-function closeEndSessionModal() {
+function closeModal() {
   document.getElementById("endSessionModal").classList.add("hidden");
   resetStopwatch();
 }
 
+/* ── PiP ── */
+async function openPip() {
+  if(!("documentPictureInPicture" in window)){
+    document.getElementById("pipUnsupported").classList.remove("hidden"); return;
+  }
+  if(pipWindow&&!pipWindow.closed){ pipWindow.focus(); return; }
+  pipWindow=await window.documentPictureInPicture.requestWindow({width:260,height:130});
+  const st=pipWindow.document.createElement("style");
+  st.textContent=`body{margin:0;background:#0f1117;color:#e4e7f0;font-family:'JetBrains Mono',monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh}
+  .t{font-size:52px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:1px}
+  .l{font-size:11px;letter-spacing:2px;color:#626c84;margin-top:4px}`;
+  pipWindow.document.head.appendChild(st);
+  const wrap=pipWindow.document.createElement("div");
+  const act=getActivity(document.getElementById("subjectSelect").value);
+  wrap.innerHTML=`<div class="t" id="pipTime">${fmt(swSeconds)}</div><div class="l">${act?act.name.toUpperCase():""}</div>`;
+  pipWindow.document.body.appendChild(wrap);
+  pipWindow.addEventListener("pagehide",()=>{ pipWindow=null; });
+}
 
+/* ── INIT ── */
 function initTimerHandlers() {
-  document.getElementById("startBtn").addEventListener("click", () => {
-    startStopwatch();
-    const vol = parseInt(document.getElementById("noiseVolume").value, 10);
-    if (document.getElementById("brownNoiseBtn").dataset.on === "true") {
-      startBrownNoise(vol);
-    }
-  });
-
+  document.getElementById("startBtn").addEventListener("click", startStopwatch);
   document.getElementById("pauseBtn").addEventListener("click", pauseStopwatch);
+  document.getElementById("endBtn").addEventListener("click", openEndSessionModal);
+  document.getElementById("quickLogBtn").addEventListener("click", quickLog);
+  document.getElementById("saveSessionBtn").addEventListener("click", saveWithDetails);
 
-  document.getElementById("endBtn").addEventListener("click", () => {
-    stopBrownNoise();
-    document.getElementById("brownNoiseBtn").dataset.on = "false";
-    document.getElementById("brownNoiseBtn").textContent = "🔊 Brown Noise: OFF";
-    openEndSessionModal();
+  document.getElementById("takeBreakBtn").addEventListener("click",()=>{
+    document.getElementById("takeBreakBtn").disabled=true;
+    document.getElementById("skipBreakBtn").disabled=true;
+    startBreak(document.getElementById("modalBreakDisplay"), closeModal);
   });
+  document.getElementById("skipBreakBtn").addEventListener("click", closeModal);
 
-  document.getElementById("saveSessionBtn").addEventListener("click", saveCurrentSession);
-
-  document.getElementById("quickLogBtn").addEventListener("click", quickLogSession);
-
-  document.getElementById("takeBreakBtn").addEventListener("click", () => {
-    document.getElementById("takeBreakBtn").disabled = true;
-    document.getElementById("skipBreakBtn").disabled = true;
-    startBreak(document.getElementById("modalBreakDisplay"), () => {
-      closeEndSessionModal();
-    });
-  });
-
-  document.getElementById("skipBreakBtn").addEventListener("click", () => {
-    closeEndSessionModal();
-  });
-
-  document.querySelectorAll(".toggle-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".toggle-btn").forEach(b => b.classList.remove("selected"));
+  document.querySelectorAll(".toggle-btn").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      document.querySelectorAll(".toggle-btn").forEach(b=>b.classList.remove("selected"));
       btn.classList.add("selected");
-      pendingRepPass = btn.dataset.val;
+      pendingRepPass=btn.dataset.val;
     });
   });
 
-  document.getElementById("brownNoiseBtn").addEventListener("click", (e) => {
-    const btn = e.target;
-    const on = btn.dataset.on === "true";
-    const vol = parseInt(document.getElementById("noiseVolume").value, 10);
-    if (on) {
-      stopBrownNoise();
-      btn.dataset.on = "false";
-      btn.textContent = "🔊 Brown Noise: OFF";
-    } else {
-      startBrownNoise(vol);
-      btn.dataset.on = "true";
-      btn.textContent = "🔊 Brown Noise: ON";
+  document.getElementById("brownNoiseBtn").addEventListener("click",()=>{
+    const btn=document.getElementById("brownNoiseBtn");
+    const on=btn.classList.contains("active");
+    if(on){ stopBrownNoise(); btn.classList.remove("active"); document.getElementById("noiseStatus").textContent="OFF"; }
+    else{ startBrownNoise(parseInt(document.getElementById("noiseVolume").value)); btn.classList.add("active"); document.getElementById("noiseStatus").textContent="ON"; }
+  });
+  document.getElementById("noiseVolume").addEventListener("input",e=>setNoiseVolume(parseInt(e.target.value)));
+  document.getElementById("breakBtn").addEventListener("click",()=>startBreak());
+  document.getElementById("pipBtn").addEventListener("click", openPip);
+
+  document.getElementById("subjectSelect").addEventListener("change",e=>{
+    updateRing();
+    if(pipWindow&&!pipWindow.closed){
+      const act=getActivity(e.target.value);
+      const l=pipWindow.document.querySelector(".l");
+      if(l) l.textContent=act?act.name.toUpperCase():"";
     }
   });
 
-  document.getElementById("noiseVolume").addEventListener("input", (e) => {
-    setNoiseVolume(parseInt(e.target.value, 10));
-  });
-
-  document.getElementById("breakBtn").addEventListener("click", () => startBreak());
-
-  document.getElementById("pipBtn").addEventListener("click", openPipTimer);
-
-  document.getElementById("subjectSelect").addEventListener("change", (e) => {
-    if (pipWindow && !pipWindow.closed) {
-      const labelEl = pipWindow.document.querySelector(".pip-label");
-      if (labelEl) labelEl.textContent = SUBJECT_LABELS[e.target.value].toUpperCase();
-    }
-  });
-
-  if (!("documentPictureInPicture" in window)) {
+  if(!("documentPictureInPicture" in window)){
     document.getElementById("pipUnsupported").classList.remove("hidden");
   }
 
-  updateStopwatchDisplay();
+  updateDisplay();
 }
