@@ -1,36 +1,32 @@
-/* app.js
-   Entry point: tab navigation + init all modules.
-*/
-
-function switchTab(tabName) {
-  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-  document.querySelector(`.tab-btn[data-tab="${tabName}"]`).classList.add("active");
-
-  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
-  document.getElementById(`view-${tabName}`).classList.add("active");
-
-  if (tabName === "dashboard") renderDashboard();
-  if (tabName === "data") renderDataView();
-  if (tabName === "night") {
-    renderPastJournal();
-  }
+/* app.js */
+function switchTab(name) {
+  document.querySelectorAll(".tab-btn").forEach(b=>b.classList.toggle("active",b.dataset.tab===name));
+  document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id===`view-${name}`));
+  if(name==="dashboard") renderDashboard();
+  if(name==="data") renderDataView();
+  if(name==="night"){ renderPastJournal(); document.getElementById("nightSavedMsg").classList.add("hidden"); }
+  if(name==="activities") renderActivitiesList();
 }
 
-function initNav() {
-  document.querySelectorAll(".tab-btn").forEach(btn => {
-    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+function initTheme() {
+  const saved=DATA.meta.theme||"auto";
+  document.documentElement.setAttribute("data-theme",saved);
+  document.getElementById("themeToggle").addEventListener("click",()=>{
+    const cur=document.documentElement.getAttribute("data-theme");
+    const next=cur==="dark"?"light":cur==="light"?"auto":"dark";
+    document.documentElement.setAttribute("data-theme",next);
+    DATA.meta.theme=next; persist();
   });
 }
 
-window.addEventListener("DOMContentLoaded", () => {
-  initNav();
+window.addEventListener("DOMContentLoaded",()=>{
+  initTheme();
+  document.querySelectorAll(".tab-btn").forEach(btn=>btn.addEventListener("click",()=>switchTab(btn.dataset.tab)));
+  populateSubjectSelects();
   initTimerHandlers();
   initNightHandlers();
+  initActivitiesHandlers();
   initDataHandlers();
-
   renderStickyNote();
   renderDashboard();
-
-  // small delay so reminder banner doesn't flash before paint
-  setTimeout(checkExportReminder, 800);
 });
