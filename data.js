@@ -1,173 +1,78 @@
-/* data.js
-   Export to JSON file, import from JSON file, reset, raw preview,
-   and weekly export reminder (Sunday + on-open).
-*/
-
+/* data.js */
 function exportData() {
-  const blob = new Blob([JSON.stringify(DATA, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  const dateStr = todayStr();
-  a.href = url;
-  a.download = `focus-system-backup-${dateStr}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-
-  DATA.meta.lastExportDate = todayStr();
-  persist();
-  renderDataView();
-  hideExportReminder();
+  const blob=new Blob([JSON.stringify(DATA,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=`focus-system-${todayStr()}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  DATA.meta.lastExportDate=todayStr(); persist();
+  renderDataView(); hideExportReminder();
 }
 
 function importDataFile(file) {
-  const reader = new FileReader();
-  reader.onload = (e) => {
+  const reader=new FileReader();
+  reader.onload=e=>{
     try {
-      const imported = JSON.parse(e.target.result);
-      if (!Array.isArray(imported.sessions) || !Array.isArray(imported.journal)) {
-        alert("This file doesn't look like a valid Focus System backup.");
-        return;
-      }
-
-      const merge = confirm(
-        "Import found. Click OK to MERGE with existing data (recommended), or Cancel to REPLACE all existing data with this file."
-      );
-
-      if (merge) {
-        // merge sessions by id (avoid duplicates)
-        const existingIds = new Set(DATA.sessions.map(s => s.id));
-        imported.sessions.forEach(s => {
-          if (!existingIds.has(s.id)) {
-            DATA.sessions.push(s);
-            existingIds.add(s.id);
-          }
-        });
-        // merge journal by date (imported wins on conflict... actually keep both, dedupe by date+forDate)
-        const existingJournalKeys = new Set(DATA.journal.map(j => j.date + "|" + j.forDate));
-        imported.journal.forEach(j => {
-          const key = j.date + "|" + j.forDate;
-          if (!existingJournalKeys.has(key)) {
-            DATA.journal.push(j);
-            existingJournalKeys.add(key);
-          }
-        });
+      const imp=JSON.parse(e.target.result);
+      if(!Array.isArray(imp.sessions)) return alert("Not a valid Focus System backup.");
+      const merge=confirm("Merge with existing data? (OK = merge, Cancel = replace)");
+      if(merge){
+        const ids=new Set(DATA.sessions.map(s=>s.id));
+        imp.sessions.forEach(s=>{ if(!ids.has(s.id)){ DATA.sessions.push(s); ids.add(s.id); } });
+        if(Array.isArray(imp.journal)){
+          const jkeys=new Set(DATA.journal.map(j=>j.date+"|"+j.forDate));
+          imp.journal.forEach(j=>{ const k=j.date+"|"+j.forDate; if(!jkeys.has(k)){ DATA.journal.push(j); jkeys.add(k); } });
+        }
+        if(Array.isArray(imp.activities)&&imp.activities.length) DATA.activities=imp.activities;
       } else {
-        DATA.sessions = imported.sessions;
-        DATA.journal = imported.journal;
-        if (imported.meta) DATA.meta = Object.assign(DATA.meta, imported.meta);
+        DATA.sessions=imp.sessions||[];
+        DATA.journal=imp.journal||[];
+        DATA.activities=imp.activities&&imp.activities.length?imp.activities:DATA.activities;
+        if(imp.meta) DATA.meta=Object.assign(DATA.meta,imp.meta);
       }
-
-      persist();
-      renderDashboard();
-      renderPastJournal();
-      renderStickyNote();
-      renderDataView();
+      persist(); renderDashboard(); renderPastJournal(); renderStickyNote();
+      populateSubjectSelects(); renderActivitiesList(); renderDataView();
       alert("Import complete.");
-    } catch (err) {
-      alert("Failed to read file: " + err.message);
-    }
+    } catch(err){ alert("Failed: "+err.message); }
   };
   reader.readAsText(file);
 }
 
-function resetAllData() {
-  const confirmed = confirm(
-    "This will permanently delete all sessions and journal entries from this browser. Make sure you've exported a backup first.\n\nAre you sure?"
-  );
-  if (!confirmed) return;
-
-  const doubleCheck = confirm("Really sure? This cannot be undone.");
-  if (!doubleCheck) return;
-
-  DATA = defaultData();
-  persist();
-  renderDashboard();
-  renderPastJournal();
-  renderStickyNote();
-  renderDataView();
-}
-
-function renderDataView() {
-  const reminderCheckbox = document.getElementById("reminderEnabled");
-  reminderCheckbox.checked = DATA.meta.reminderEnabled !== false;
-
-  const lastExportInfo = document.getElementById("lastExportInfo");
-  if (DATA.meta.lastExportDate) {
-    lastExportInfo.textContent = `Last export: ${DATA.meta.lastExportDate}`;
-  } else {
-    lastExportInfo.textContent = "No export yet. Export now to create your first backup.";
-  }
-
-  document.getElementById("rawDataPreview").textContent = JSON.stringify(DATA, null, 2);
-}
-
-/* ---------- WEEKLY REMINDER LOGIC ---------- */
-
 function shouldShowReminder() {
-  if (DATA.meta.reminderEnabled === false) return false;
-  if (DATA.sessions.length === 0) return false; // nothing to back up yet
-
-  const now = new Date();
-  const isSunday = now.getDay() === 0;
-  const isEvening = now.getHours() >= 18;
-
-  // never exported
-  if (!DATA.meta.lastExportDate) {
-    // show after first week of use, or any Sunday
-    if (isSunday) return true;
-  }
-
-  if (DATA.meta.lastExportDate) {
-    const last = new Date(DATA.meta.lastExportDate);
-    const daysSince = Math.floor((now - last) / (1000 * 60 * 60 * 24));
-    if (daysSince >= 7) return true;
-    // also nudge on Sunday evening even if within 7 days, if not exported today
-    if (isSunday && isEvening && DATA.meta.lastExportDate !== todayStr()) return true;
-  } else {
-    if (isSunday) return true;
-  }
-
+  if(!DATA.meta.reminderEnabled||DATA.sessions.length===0) return false;
+  const now=new Date(), isSun=now.getDay()===0, isEve=now.getHours()>=18;
+  if(!DATA.meta.lastExportDate) return isSun;
+  const days=Math.floor((now-new Date(DATA.meta.lastExportDate))/(86400000));
+  if(days>=7) return true;
+  if(isSun&&isEve&&DATA.meta.lastExportDate!==todayStr()) return true;
   return false;
 }
 
 function checkExportReminder() {
-  if (shouldShowReminder()) {
-    document.getElementById("exportReminder").classList.remove("hidden");
-  }
+  if(shouldShowReminder()) document.getElementById("exportReminder").classList.remove("hidden");
+}
+function hideExportReminder() { document.getElementById("exportReminder").classList.add("hidden"); }
+
+function renderDataView() {
+  document.getElementById("reminderEnabled").checked=DATA.meta.reminderEnabled!==false;
+  document.getElementById("lastExportInfo").textContent=DATA.meta.lastExportDate?`Last export: ${DATA.meta.lastExportDate}`:"No export yet.";
+  document.getElementById("rawDataPreview").textContent=JSON.stringify(DATA,null,2);
 }
 
-function hideExportReminder() {
-  document.getElementById("exportReminder").classList.add("hidden");
+function resetAllData() {
+  if(!confirm("Delete ALL data? Make sure you exported a backup first.")) return;
+  if(!confirm("Really? This cannot be undone.")) return;
+  DATA=defaultData(); persist();
+  renderDashboard(); renderPastJournal(); renderStickyNote();
+  populateSubjectSelects(); renderActivitiesList(); renderDataView();
 }
 
 function initDataHandlers() {
   document.getElementById("exportBtn").addEventListener("click", exportData);
   document.getElementById("exportNowBtn").addEventListener("click", exportData);
-
-  document.getElementById("dismissReminderBtn").addEventListener("click", () => {
-    hideExportReminder();
-    DATA.meta.lastReminderShown = todayStr();
-    persist();
-  });
-
-  document.getElementById("importFile").addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    if (file) importDataFile(file);
-    e.target.value = "";
-  });
-
+  document.getElementById("dismissReminderBtn").addEventListener("click",()=>{ hideExportReminder(); DATA.meta.lastReminderShown=todayStr(); persist(); });
+  document.getElementById("importFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) importDataFile(f); e.target.value=""; });
   document.getElementById("resetBtn").addEventListener("click", resetAllData);
-
-  document.getElementById("reminderEnabled").addEventListener("change", (e) => {
-    DATA.meta.reminderEnabled = e.target.checked;
-    persist();
-    if (!e.target.checked) hideExportReminder();
-  });
-
+  document.getElementById("reminderEnabled").addEventListener("change",e=>{ DATA.meta.reminderEnabled=e.target.checked; persist(); if(!e.target.checked) hideExportReminder(); });
   renderDataView();
-
-  // check on open
-  checkExportReminder();
+  setTimeout(checkExportReminder,800);
 }
