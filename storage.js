@@ -1,59 +1,43 @@
-/* storage.js
-   Single source of truth. Everything reads/writes through this object.
-   Persisted to localStorage under key "focusSystemData".
-*/
+/* storage.js - Dynamic activities, sessions, journal */
 
-const STORAGE_KEY = "focusSystemData";
+const STORAGE_KEY = "focusSystemData_v2";
 
-const SUBJECTS = ["de", "french", "spanish", "music"];
-
-const SUBJECT_LABELS = {
-  de: "Data Engineering",
-  french: "French",
-  spanish: "Spanish",
-  music: "Music Production"
-};
-
-// Extra fields tracked per subject (matches your weekly tracker doc)
-const SUBJECT_EXTRAS = {
-  de: [
-    { key: "commits", label: "GitHub commits" },
-    { key: "reps", label: "Reps passed" },
-    { key: "posts", label: "LinkedIn posts" },
-    { key: "outreach", label: "Outreach sent" }
-  ],
-  french: [
-    { key: "vocab", label: "New words" },
-    { key: "exercises", label: "Exercises done" }
-  ],
-  spanish: [
-    { key: "vocab", label: "New words" },
-    { key: "exercises", label: "Exercises done" }
-  ],
-  music: [
-    { key: "tracks", label: "Tracks/loops made" },
-    { key: "exercises", label: "Exercises done" }
-  ]
-};
+const DEFAULT_ACTIVITIES = [
+  { id: "de",      name: "Data Engineering",  color: "#4d8ef0", goal: 200, extras: [
+      { key: "commits",  label: "GitHub commits" },
+      { key: "reps",     label: "Reps passed" },
+      { key: "posts",    label: "LinkedIn posts" },
+      { key: "outreach", label: "Outreach sent" }
+    ]
+  },
+  { id: "french",  name: "French",            color: "#b87de8", goal: 100, extras: [
+      { key: "vocab",     label: "New words" },
+      { key: "exercises", label: "Exercises" }
+    ]
+  },
+  { id: "spanish", name: "Spanish",           color: "#f0a83a", goal: 100, extras: [
+      { key: "vocab",     label: "New words" },
+      { key: "exercises", label: "Exercises" }
+    ]
+  },
+  { id: "music",   name: "Music Production",  color: "#3ecfb8", goal: 80,  extras: [
+      { key: "tracks",    label: "Tracks / loops" },
+      { key: "exercises", label: "Exercises" }
+    ]
+  }
+];
 
 function todayStr(d = new Date()) {
-  // local date YYYY-MM-DD
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return [d.getFullYear(), String(d.getMonth()+1).padStart(2,"0"), String(d.getDate()).padStart(2,"0")].join("-");
 }
 
 function defaultData() {
   return {
-    version: 1,
-    sessions: [],     // {id, date, subject, minutes, repPass, extras:{}, notes}
-    journal: [],      // {date, j1, j2task, j2fallback, j3, tomorrowSubject}
-    meta: {
-      lastExportDate: null,
-      reminderEnabled: true,
-      lastReminderShown: null
-    }
+    version: 2,
+    activities: JSON.parse(JSON.stringify(DEFAULT_ACTIVITIES)),
+    sessions: [],
+    journal: [],
+    meta: { lastExportDate: null, reminderEnabled: true, lastReminderShown: null, theme: "auto" }
   };
 }
 
@@ -61,94 +45,78 @@ function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultData();
-    const parsed = JSON.parse(raw);
-    // basic shape safety
+    const p = JSON.parse(raw);
     return {
-      version: parsed.version || 1,
-      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
-      journal: Array.isArray(parsed.journal) ? parsed.journal : [],
-      meta: Object.assign({ lastExportDate: null, reminderEnabled: true, lastReminderShown: null }, parsed.meta || {})
+      version: p.version || 2,
+      activities: Array.isArray(p.activities) && p.activities.length ? p.activities : JSON.parse(JSON.stringify(DEFAULT_ACTIVITIES)),
+      sessions: Array.isArray(p.sessions) ? p.sessions : [],
+      journal:  Array.isArray(p.journal)  ? p.journal  : [],
+      meta: Object.assign({ lastExportDate:null, reminderEnabled:true, lastReminderShown:null, theme:"auto" }, p.meta||{})
     };
-  } catch (e) {
-    console.error("Failed to load data, starting fresh.", e);
-    return defaultData();
-  }
+  } catch(e) { return defaultData(); }
 }
 
-function saveData(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
-
-// global in-memory store
 let DATA = loadData();
+function persist() { localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA)); }
 
-function persist() {
-  saveData(DATA);
-}
+/* ── ACTIVITIES ── */
+function getActivities() { return DATA.activities; }
+function getActivity(id)  { return DATA.activities.find(a => a.id === id); }
 
-function addSession(session) {
-  DATA.sessions.push(session);
+function saveActivity(act) {
+  const idx = DATA.activities.findIndex(a => a.id === act.id);
+  if (idx >= 0) DATA.activities[idx] = act;
+  else DATA.activities.push(act);
   persist();
 }
 
-function addOrUpdateJournal(entry) {
-  const idx = DATA.journal.findIndex(j => j.date === entry.date);
-  if (idx >= 0) {
-    DATA.journal[idx] = entry;
-  } else {
-    DATA.journal.push(entry);
-  }
+function deleteActivity(id) {
+  DATA.activities = DATA.activities.filter(a => a.id !== id);
   persist();
 }
 
-function getLatestJournal() {
-  if (DATA.journal.length === 0) return null;
-  return DATA.journal[DATA.journal.length - 1];
+function reorderActivities(ids) {
+  const map = Object.fromEntries(DATA.activities.map(a => [a.id, a]));
+  DATA.activities = ids.map(id => map[id]).filter(Boolean);
+  persist();
 }
 
-function getSessionsBySubject(subject) {
-  return DATA.sessions.filter(s => s.subject === subject);
+function generateActivityId(name) {
+  return name.toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"") + "-" + Date.now().toString(36);
 }
 
-function getTotalMinutes(subject) {
-  return getSessionsBySubject(subject).reduce((sum, s) => sum + s.minutes, 0);
-}
+/* ── SESSIONS ── */
+function addSession(s)              { DATA.sessions.push(s); persist(); }
+function getSessionsByActivity(id)  { return DATA.sessions.filter(s => s.subject === id); }
+function getTotalMinutes(id)        { return getSessionsByActivity(id).reduce((n,s)=>n+s.minutes,0); }
+function getSessionsForDate(dt)     { return DATA.sessions.filter(s => s.date === dt); }
+function getActiveDates()           { return [...new Set(DATA.sessions.map(s=>s.date))].sort(); }
 
-function getSessionsForDate(dateStr) {
-  return DATA.sessions.filter(s => s.date === dateStr);
-}
-
-// returns array of unique dates with at least one session, sorted ascending
-function getActiveDates() {
-  const set = new Set(DATA.sessions.map(s => s.date));
-  return Array.from(set).sort();
-}
-
-// streak in days (consecutive days with ANY session, ending today or yesterday)
 function getCurrentStreak() {
-  const dates = new Set(DATA.sessions.map(s => s.date));
-  let streak = 0;
-  let cursor = new Date();
-  // allow today to be empty without breaking yesterday's streak display
-  if (!dates.has(todayStr(cursor))) {
-    cursor.setDate(cursor.getDate() - 1);
-  }
-  while (dates.has(todayStr(cursor))) {
-    streak++;
-    cursor.setDate(cursor.getDate() - 1);
-  }
+  const dates = new Set(DATA.sessions.map(s=>s.date));
+  let streak=0, cursor=new Date();
+  if (!dates.has(todayStr(cursor))) cursor.setDate(cursor.getDate()-1);
+  while(dates.has(todayStr(cursor))){ streak++; cursor.setDate(cursor.getDate()-1); }
   return streak;
 }
 
-// consecutive days with ZERO sessions ending today
 function getCurrentZeroStreak() {
-  const dates = new Set(DATA.sessions.map(s => s.date));
-  let zeroStreak = 0;
-  let cursor = new Date();
-  while (!dates.has(todayStr(cursor))) {
-    zeroStreak++;
-    cursor.setDate(cursor.getDate() - 1);
-    if (zeroStreak > 60) break; // safety
-  }
-  return zeroStreak;
+  const dates = new Set(DATA.sessions.map(s=>s.date));
+  let z=0, cursor=new Date();
+  while(!dates.has(todayStr(cursor))){ z++; cursor.setDate(cursor.getDate()-1); if(z>60) break; }
+  return z;
+}
+
+/* ── JOURNAL ── */
+function addOrUpdateJournal(entry) {
+  const idx = DATA.journal.findIndex(j => j.date === entry.date);
+  if (idx>=0) DATA.journal[idx]=entry; else DATA.journal.push(entry);
+  persist();
+}
+function getLatestJournal() {
+  return DATA.journal.length ? DATA.journal[DATA.journal.length-1] : null;
+}
+
+function tomorrowStr() {
+  const d=new Date(); d.setDate(d.getDate()+1); return todayStr(d);
 }
