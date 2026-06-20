@@ -3,26 +3,23 @@
 const STORAGE_KEY = "focusSystemData_v2";
 
 const DEFAULT_ACTIVITIES = [
-  { id: "de",      name: "Data Engineering",  color: "#4d8ef0", goal: 200, extras: [
-      { key: "commits",  label: "GitHub commits" },
-      { key: "reps",     label: "Reps passed" },
-      { key: "posts",    label: "LinkedIn posts" },
-      { key: "outreach", label: "Outreach sent" }
+  { id: "kosmus",   name: "Kosmus Studio",      color: "#6B1A1A", goal: 200, extras: [
+      { key: "videos",   label: "Videos rendered" },
+      { key: "posts",    label: "Posted (TikTok/Reels)" }
     ]
   },
-  { id: "french",  name: "French",            color: "#b87de8", goal: 100, extras: [
-      { key: "vocab",     label: "New words" },
-      { key: "exercises", label: "Exercises" }
+  { id: "writing",  name: "Songwriting / Co-writes", color: "#4d8ef0", goal: 100, extras: [
+      { key: "songs",    label: "Songs / demos started" },
+      { key: "finished", label: "Demos finished" }
     ]
   },
-  { id: "spanish", name: "Spanish",           color: "#f0a83a", goal: 100, extras: [
-      { key: "vocab",     label: "New words" },
-      { key: "exercises", label: "Exercises" }
+  { id: "production", name: "Beat / Production",  color: "#3ecfb8", goal: 100, extras: [
+      { key: "beats",    label: "Beats made" },
+      { key: "placed",   label: "Pitched / sent out" }
     ]
   },
-  { id: "music",   name: "Music Production",  color: "#3ecfb8", goal: 80,  extras: [
-      { key: "tracks",    label: "Tracks / loops" },
-      { key: "exercises", label: "Exercises" }
+  { id: "locs",     name: "Locs Maintenance",   color: "#b87de8", goal: 0,  extras: [
+      { key: "retwist",  label: "Retwist done" }
     ]
   }
 ];
@@ -92,11 +89,30 @@ function getTotalMinutes(id)        { return getSessionsByActivity(id).reduce((n
 function getSessionsForDate(dt)     { return DATA.sessions.filter(s => s.date === dt); }
 function getActiveDates()           { return [...new Set(DATA.sessions.map(s=>s.date))].sort(); }
 
+/* ── MINIMUM VIABLE DAY ──
+   A day only counts toward a streak if at least MVD_MINUTES were logged.
+   Total hours/volume stats are unaffected — this only gates streaks. */
+const MVD_MINUTES = 15;
+
+function getDayTotalMinutes(date) {
+  return DATA.sessions.filter(s=>s.date===date).reduce((n,s)=>n+s.minutes,0);
+}
+
+function getDayMinutesForActivity(actId, date) {
+  return DATA.sessions.filter(s=>s.date===date && s.subject===actId).reduce((n,s)=>n+s.minutes,0);
+}
+
 function getCurrentStreak() {
-  const dates = new Set(DATA.sessions.map(s=>s.date));
   let streak=0, cursor=new Date();
-  if (!dates.has(todayStr(cursor))) cursor.setDate(cursor.getDate()-1);
-  while(dates.has(todayStr(cursor))){ streak++; cursor.setDate(cursor.getDate()-1); }
+  if (getDayTotalMinutes(todayStr(cursor)) < MVD_MINUTES) cursor.setDate(cursor.getDate()-1);
+  while(getDayTotalMinutes(todayStr(cursor)) >= MVD_MINUTES){ streak++; cursor.setDate(cursor.getDate()-1); }
+  return streak;
+}
+
+function getCurrentStreakForActivity(actId) {
+  let streak=0, cursor=new Date();
+  if (getDayMinutesForActivity(actId, todayStr(cursor)) < MVD_MINUTES) cursor.setDate(cursor.getDate()-1);
+  while(getDayMinutesForActivity(actId, todayStr(cursor)) >= MVD_MINUTES){ streak++; cursor.setDate(cursor.getDate()-1); }
   return streak;
 }
 
@@ -115,6 +131,19 @@ function addOrUpdateJournal(entry) {
 }
 function getLatestJournal() {
   return DATA.journal.length ? DATA.journal[DATA.journal.length-1] : null;
+}
+
+/* Equanimity check: prompt 3 ("what am I carrying") repeating or present
+   on 2+ consecutive most-recent journal entries is the signal to act,
+   per the doc's Equanimity Response Protocol. */
+function getEquanimityFlag() {
+  const sorted=[...DATA.journal].sort((a,b)=>b.date.localeCompare(a.date));
+  if (sorted.length<2) return null;
+  const [latest, prev] = sorted;
+  if (latest.j3 && latest.j3.trim() && prev.j3 && prev.j3.trim()) {
+    return { latest: latest.j3, prev: prev.j3 };
+  }
+  return null;
 }
 
 function tomorrowStr() {
