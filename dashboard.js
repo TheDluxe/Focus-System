@@ -13,13 +13,14 @@ function renderSubjectCards() {
     const hrs=(total/60).toFixed(1);
     const sessions=getSessionsByActivity(act.id);
     const reps=sessions.filter(s=>s.repPass==="yes").length;
+    const streak=getCurrentStreakForActivity(act.id);
     const div=document.createElement("div");
     div.className="subject-card";
     div.style.setProperty("--c",act.color);
     div.innerHTML=`<div class="sc-name">${act.name}</div>
       <div class="sc-total">${hrs}</div>
       <div class="sc-unit">hours</div>
-      <div class="sc-sub">${sessions.length} sessions · ${reps} reps ✓</div>`;
+      <div class="sc-sub">${sessions.length} sessions · ${reps} reps ✓${streak>0?` · 🔥 ${streak}d`:""}</div>`;
     c.appendChild(div);
   });
 }
@@ -46,7 +47,7 @@ function renderGoalBars() {
 function renderStreakAlert() {
   const el=document.getElementById("streakAlert");
   const streak=getCurrentStreak(), zero=getCurrentZeroStreak();
-  if(zero>=2){ el.className="streak-badge warn"; el.textContent=`⚠ ${zero} days with nothing. Open DBeaver. One query.`; }
+  if(zero>=2){ el.className="streak-badge warn"; el.textContent=`⚠ ${zero} days with nothing. Minimum Viable Day: one 15-min block, one activity. That's it.`; }
   else if(streak>0){ el.className="streak-badge ok"; el.textContent=`🔥 ${streak} day streak`; }
   else { el.className="streak-badge empty"; }
 }
@@ -142,4 +143,5 @@ function renderDashboard() {
   renderHeatmaps();
   renderDailyLog();
   renderWeeklySnapshot();
+  if (typeof renderEquanimityBanner === "function") renderEquanimityBanner();
 }
